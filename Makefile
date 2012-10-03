@@ -3,7 +3,7 @@ PROGOPTS=
 DBGFLAG=-ggdb 
 OPTFLAG=
 CFLAGS=-std=c99 $(DBGFLAG) -Wall $(OPTFLAG) $(PROGOPTS)
-LDLIBS=-lpthread -lm
+LDLIBS=-lpthread -lm -ltpl
 LDFLAGS=$(DBGFLAG) $(OPTFLAG)
 
 SOURCES=dsort.c
