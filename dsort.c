@@ -79,12 +79,13 @@ int main(int argc, char *argv[]){
             FILE *f1, *f2;
             f1 = fdopen(p_a[0], "r");
             f2 = fdopen(p_b[0], "r");
-            fprintf(stderr, "%d - Master Waiting\n", getpid());
+	
+            numlist_t na = parse(f1);
+            numlist_t nb = parse(f2);
+            fprintf(stderr, "%d - Master waiting for all children\n", getpid());
             waitpid(c1, NULL, 0);
             waitpid(c2, NULL, 0);
 
-            numlist_t na = parse(f1);
-            numlist_t nb = parse(f2);
             fprintf(stderr, "%d - Final Merge\n", getpid());
             numlist_t m = merge(na, nb);
 
@@ -131,8 +132,8 @@ void node(int n, char *files[], FILE *parent){
             perror(files[0]);
             kill(0, SIGUSR1);
         }
-    } else {
-        fprintf(stderr, "%d is a merger\n", getpid());
+    } else if(n){
+        fprintf(stderr, "%d is a merger %d\n", getpid(), n);
         int na = n/2;
         int nb = n - na;
         pid_t child_a, child_b;
@@ -171,14 +172,13 @@ void node(int n, char *files[], FILE *parent){
                 FILE * f1 = fdopen(p_a[0], "r");
                 FILE * f2 = fdopen(p_b[0], "r");
                 //node parent
-                fprintf(stderr, "%d - Waiting for %d\n", getpid(), child_a);
-                waitpid(child_a, NULL, 0);
                 numlist_t alist = parse(f1);
-
+                numlist_t blist = parse(f2);
                 fprintf(stderr, "%d - Waiting for %d\n", getpid(), child_b);
                 waitpid(child_b, NULL, 0);
-                numlist_t blist = parse(f2);
-
+                
+                fprintf(stderr, "%d - Waiting for %d\n", getpid(), child_a);
+                waitpid(child_a, NULL, 0);
 
                 numlist_t m = merge(alist, blist);
 
