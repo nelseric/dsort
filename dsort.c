@@ -20,8 +20,17 @@ void sigint_handler(int signum){
     }
 }
 
+void p(numlist_t n, const char * s, FILE * os){
+    for(int i = 0; i < n.count; i++){
+        fprintf(os,"%d%s", n.list[i], s);
+    }
+}
 
 int main(int argc, char *argv[]){
+    if(argc < 2){
+        fputs("At least one file must be specified\n", stderr);
+        exit(1);
+    }
     struct sigaction sa;
     memset(&sa, 0, sizeof(struct sigaction));
     sa.sa_handler = sigint_handler;
@@ -46,6 +55,7 @@ int main(int argc, char *argv[]){
         perror("fork");
         exit(1);
     } else if(c1 == 0){
+        fprintf(stderr, "First child A created - %d\n",getpid());
         close(p_a[0]);
         FILE * pfile = fdopen(p_a[1], "w");
         node(a, argv + 1, pfile);
@@ -54,6 +64,7 @@ int main(int argc, char *argv[]){
         //make another child
         c2 = fork();
         if(c2 == 0){
+            fprintf(stderr, "First child B created - %d\n",getpid());
             close(p_b[0]);
             FILE * pfile = fdopen(p_b[1], "w");
             node(b, argv + a + 1, pfile);
@@ -65,11 +76,19 @@ int main(int argc, char *argv[]){
         } else {
             close(p_a[1]);
             close(p_b[1]);
+            FILE *f1, *f2;
+            f1 = fdopen(p_a[0], "r");
+            f2 = fdopen(p_b[0], "r");
+            fprintf(stderr, "%d - Master Waiting\n", getpid());
             waitpid(c1, NULL, 0);
             waitpid(c2, NULL, 0);
 
-            //Parent
-            //gonna merge
+            numlist_t na = parse(f1);
+            numlist_t nb = parse(f2);
+            fprintf(stderr, "%d - Final Merge\n", getpid());
+            numlist_t m = merge(na, nb);
+
+            p(m, "\n",stdout);   
         }
     }
 }
@@ -80,6 +99,7 @@ int int_cmp(const void *a, const void *b){
 
 void node(int n, char *files[], FILE *parent){
     if(n == 1){
+        fprintf(stderr, "%d is a leaf\n", getpid());
         //Sort
         FILE * f = fopen(files[0], "r");
         numlist_t nl;
@@ -87,6 +107,7 @@ void node(int n, char *files[], FILE *parent){
         nl.count = 0;
         nl.list = malloc(nl.size * sizeof(char**));
         if(f != NULL){
+            fprintf(stderr, "%d - %s opened\n", getpid(), files[0]);
             char buf[128];
             while(fgets(buf, 128, f) != NULL){
                 if(nl.count < nl.size){
@@ -97,16 +118,21 @@ void node(int n, char *files[], FILE *parent){
                 }
             }
             fclose(f);
-            printf("%s - %d\n", files[0], nl.count);
+            fprintf(stderr, "%d - Sorting\n", getpid());
             qsort(nl.list, nl.count, sizeof(int), int_cmp);
+            fprintf(stderr, "%d - Done sorting\n", getpid());
+
+            fprintf(stderr, "%d - sending list of size %d to parent\n", getpid(), nl.count);
             for(int i = 0; i < nl.count; i++){
                 fprintf(parent,"%d\n", nl.list[i]);
             }
+            fprintf(stderr, "%d - Finished sending to parent\n", getpid());
         } else {
             perror(files[0]);
             kill(0, SIGUSR1);
         }
     } else {
+        fprintf(stderr, "%d is a merger\n", getpid());
         int na = n/2;
         int nb = n - na;
         pid_t child_a, child_b;
@@ -121,6 +147,7 @@ void node(int n, char *files[], FILE *parent){
         }
         child_a = fork();
         if(child_a == 0){
+            fprintf(stderr, "%d created A %d\n", getppid(), getpid());
             close(p_a[0]);
             FILE *f = fdopen(p_a[1], "w");
             node(na, files, f);
@@ -131,11 +158,11 @@ void node(int n, char *files[], FILE *parent){
         } else {
             child_b = fork();
             if(child_b == 0){
-                close(p_a[0]);
-                FILE *f = fdopen(p_a[1], "w");
+                fprintf(stderr, "%d created B %d\n", getppid(), getpid());
+                close(p_b[0]);
+                FILE *f = fdopen(p_b[1], "w");
                 node(nb, files + na, f);
                 fclose(f);
-            } else if(child_a == -1){
             } else if(child_b == -1) {
                 perror("fork child b");
             } else {
@@ -144,27 +171,32 @@ void node(int n, char *files[], FILE *parent){
                 FILE * f1 = fdopen(p_a[0], "r");
                 FILE * f2 = fdopen(p_b[0], "r");
                 //node parent
+                fprintf(stderr, "%d - Waiting for %d\n", getpid(), child_a);
                 waitpid(child_a, NULL, 0);
                 numlist_t alist = parse(f1);
-                for(int i = 0; i < alist.count; i++){
-                    printf("a - %d\n", alist.list[i]);
-                }
+
+                fprintf(stderr, "%d - Waiting for %d\n", getpid(), child_b);
                 waitpid(child_b, NULL, 0);
                 numlist_t blist = parse(f2);
-                for(int i = 0; i < blist.count; i++){
-                    printf("b - %d\n", blist.list[i]);
-                }
+
+
                 numlist_t m = merge(alist, blist);
+
                 free(alist.list);
                 free(blist.list);
+
+
+                fprintf(stderr, "%d - sending merged list of size %d to parent\n", getpid(), m.count);
                 for(int i = 0; i < m.count; i++){
-                    printf("merged - %d\n", m.list[i]);
+                    fprintf(parent," %d\n", m.list[i]);
                 }
+                fprintf(stderr, "%d - finished sending merged list to parent\n", getpid());
             }
         }
     }
 }
 numlist_t parse(FILE *f){
+    fprintf(stderr, "%d - started parsing file\n", getpid());
     numlist_t nl;
     nl.size = 100;
     nl.count = 0;
@@ -185,14 +217,12 @@ numlist_t parse(FILE *f){
         kill(0, SIGUSR1);
     }
 
+    fprintf(stderr, "%d - finished parsing file\n", getpid());
     return nl;
 }
 
-char * to_buf(numlist_t list, size_t *size){
-    return NULL;
-}
-
 numlist_t merge(numlist_t a, numlist_t b){
+    fprintf(stderr, "%d - starting merge\n", getpid());
     numlist_t ret;
     ret.size = a.count + b.count;
     ret.count = 0;
@@ -200,7 +230,7 @@ numlist_t merge(numlist_t a, numlist_t b){
     size_t ap = 0, bp = 0;
     while(ret.count < ret.size){
         if(ap < a.count && bp < b.count){
-            if(a.list[ap] >= b.list[bp]){
+            if(a.list[ap] <= b.list[bp]){
                 ret.list[ret.count++] = a.list[ap++];
             } else {
                 ret.list[ret.count++] = b.list[bp++];
@@ -211,6 +241,7 @@ numlist_t merge(numlist_t a, numlist_t b){
             ret.list[ret.count++] = b.list[bp++];
         }
     }
+    fprintf(stderr, "%d - finished merging\n", getpid());
     return ret;
 }
 
